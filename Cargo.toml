@@ -1,0 +1,15 @@
+[package]
+name = "mdp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[profile.release-optsize]
+inherits = "release"
+opt-level = "z"     # Maximum optimization for performance
+codegen-units = 1   # Reduce parallelism, potentially better optimization (slower build)
+debug = false       # Exclude debug symbols for smaller binary size
+lto = true          # Link-Time Optimization for further size reduction
+panic = "abort"     # Use `abort` to reduce binary size further
+strip = "symbols"      # See split-debuginfo - allows us to drop the size by ~65%
