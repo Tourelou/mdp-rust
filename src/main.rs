@@ -64,9 +64,11 @@ pub fn main() -> ExitCode {
 	match &config.command {		// Premier tri, ces commandes n'ont pas besoin de openssl
 		CommandsOptions::Help(message) => {
 			println!("{exec_name}: {message}");
+			return ExitCode::SUCCESS;
 		}
 		CommandsOptions::Version(message) => {
 			println!("{exec_name}: {message} {VERSION}");
+			return ExitCode::SUCCESS;
 		}
 		CommandsOptions::GeneratePassword => {
 			println!("{} {}",mdp_locale.mdp_gen_str, gen_pass(len));
