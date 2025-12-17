@@ -3,7 +3,7 @@ use std::io::Write;
 
 /// Tente de copier la chaîne de caractères sur le presse-papiers macOS en utilisant 'pbcopy'.
 /// Retourne 'true' si l'opération a réussi, 'false' sinon.
-fn send_to_clipboard(text: &str) -> bool {
+pub fn send_to_clipboard(text: &str) -> bool {
 	// 1. Prépare la commande, en demandant un pipe pour l'entrée standard
 	let mut child = match Command::new("pbcopy").stdin(Stdio::piped()).spawn()
 	{
@@ -30,11 +30,4 @@ fn send_to_clipboard(text: &str) -> bool {
 	
 	// 4. Retourne vrai seulement si l'écriture a réussi ET le processus s'est terminé avec succès
 	success && status.success()
-}
-
-fn main() {
-	let my_string = "Tentative de copie via pbcopy";
-
-	if send_to_clipboard(my_string) { println!("✅ {my_string} ==> Clipboard."); }
-	else { eprintln!("❌ Échec de la copie."); }
 }

@@ -3,25 +3,32 @@
 mod locale;
 mod parse;
 mod generator;
+mod clipboard;
+mod open_save_ssl_cli;
 
 use std::env;
+use std::io::{self, Write};
 use std::process::Command;
 use std::process::ExitCode;
-// Importe les types nécessaires depuis le module `parse`
-use parse::{parse_args, CommandsOptions};
-use crate::generator::gen_pass;
-use crate::locale::LangStrings;
+// Importe les types nécessaires
+use locale::LangStrings;
+use parse::CommandsOptions;
+use generator::gen_pass;
+use clipboard::send_to_clipboard;
+use open_save_ssl_cli::{decrypt_via_cli, encrypt_via_cli};
 
 // --- Logique d'Application ---
 
 const PRG_NAME: &'static str = "mdp";
-const VERSION: &'static str = "2025-12-14";
+const VERSION: &'static str = "2025-12-16";
 const DEFAULT_PW_LENGTH: usize = 12;
 const DEFAULT_FILENAME: &'static str = "mdp.bin";
 
 pub fn command_exist(cmd: &str, locale: &LangStrings) -> bool {
 	let status = Command::new("which")
 		.arg(cmd)
+		.stdout(std::process::Stdio::null()) // Redirige le chemin trouvé vers /dev/null
+		.stderr(std::process::Stdio::null()) // Redirige les erreurs vers /dev/null
 		.status()
 		.expect(locale.err_which);
 
@@ -51,7 +58,7 @@ pub fn main() -> ExitCode {
 
 	// ############################################################################
 	// Tentative de parsing des arguments en utilisant la fonction du module 'parse'
-	let config = match parse_args(&mdp_locale) {
+	let config = match parse::parse_args(&mdp_locale) {
 		Ok(c) => c,
 		Err(e) => { 
 			eprintln!("🛑 {} : {}",mdp_locale.err_cli, e);
@@ -71,29 +78,46 @@ pub fn main() -> ExitCode {
 			return ExitCode::SUCCESS;
 		}
 		CommandsOptions::GeneratePassword => {
-			println!("{} {}",mdp_locale.mdp_gen_str, gen_pass(len));
+			let pw = gen_pass(len);
+			if command_exist("pbcopy", &mdp_locale) {
+				send_to_clipboard(&pw);
+				println!("{} {pw} ==> Clipboard",mdp_locale.mdp_gen_str);
+			}
+			else { println!("{} {pw}", mdp_locale.mdp_gen_str); }
 			return ExitCode::SUCCESS;
 		}
 		_ => { }
 	}
 
 	// ############################################################################
-
+	// Le reste des commandes font affaire avec openssl
 	if ! command_exist("openssl", &mdp_locale) {
 		eprintln!("{}", mdp_locale.err_no_ssl);
 		return ExitCode::FAILURE;
 	}
 
 	// Récupère la variable d'environnement "pass"
-	match env::var("pass") {
-		Ok(val) => println!("Mot de passe pour encryption: {}", val),
-		Err(e) => println!("{}: Vous devez fournir un mot de passe d'encryption", e),
-	}
+	let file_pw = match env::var("pass") {
+		Ok(v) => v,
+		Err(_) => {
+			// La variable est absente, on demande à l'usager
+			print!("Entrez le mot de passe : ");
+			io::stdout().flush().unwrap(); // Force l'affichage du print! avant la lecture
 
+			let mut input = String::new();
+			io::stdin()
+				.read_line(&mut input)
+				.expect("Erreur lors de la lecture");
+
+			// On retire le caractère de saut de ligne (\n ou \r\n) à la fin
+			input.trim().to_string()
+		}
+	};
 	// ############################################################################
 	// Identification du path du fichier mdp et chdir le cas échéant.
 	let mut file_output = config.output_file.as_deref().unwrap_or(DEFAULT_FILENAME);
 	let file_output_path = std::path::Path::new(file_output);
+
 	if file_output_path.is_dir() {
 		eprintln!("{}", mdp_locale.err_file_is_dir);
 		return ExitCode::from(15);
@@ -120,20 +144,29 @@ pub fn main() -> ExitCode {
 		}
 	}
 
-	println!("Current directory: {:#?}", env::current_dir());
+//	println!("Current directory: {:#?}", env::current_dir());
 
-
-	let mdp_file_exist = file_output_path.exists();
+	let mdp_file_exists = file_output_path.exists();
+	let pw_file_vec = if mdp_file_exists {
+		decrypt_via_cli(&file_output, &file_pw).unwrap_or_else(|e| {
+			eprintln!("Erreur: {}", e);
+			std::process::exit(20); // Arrêt immédiat si le déchiffrement échoue
+		})
+	}
+	else { Vec::new() }; // Fichier inexistant = liste vide
 
 	// ############################################################################
 	// Affichage synthétique des paramètres détectés
-	println!("✅ Commande détectée (Longueur: {}, Fichier: {})", len, file_output);
+	println!("✅ Commande détectée: '{:?}' (Longueur: {}, Fichier: {})", &config.command, len, file_output);
 
 	// Exécution de la commande selon l'énumération
 	match &config.command {		// Deuxième tri, ces commandes font affaire avec un fichier => openssl
 		CommandsOptions::Find(pattern) => {
-			if mdp_file_exist {
-				println!("➡️ Action: Recherche du pattern '{}'.", pattern);
+			if mdp_file_exists {
+				println!("Tentative de trouver le motif '{pattern}' dans le fichier '{file_output}'.");
+				for ligne in pw_file_vec {
+					if ligne.contains(pattern) { println!("{ligne}"); }
+				}
 			}
 			else {
 				eprintln!("Le fichier '{}' n'existe pas. Pas de recherche possible.", file_output);
@@ -141,8 +174,9 @@ pub fn main() -> ExitCode {
 			}
 		}
 		CommandsOptions::Delete(pattern) => {
-			if mdp_file_exist {
+			if mdp_file_exists {
 				println!("➡️ Action: Suppression du pattern '{}'.", pattern);
+				_ = encrypt_via_cli("/home/danv/Desktop/dummy.bin", &pw_file_vec, &file_pw);
 			}
 			else {
 				eprintln!("Le fichier '{}' n'existe pas. Pas de suppresion possible.", file_output);
