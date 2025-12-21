@@ -72,3 +72,33 @@ pub fn find(ptrn: &String, data: &AppData) {
 		}
 	}
 }
+
+pub fn del(ptrn: &String, data: &mut AppData) -> bool {
+	println!("----------------");
+	let trouve = scan(&ptrn, &data.app_line_vec);
+	if trouve.is_empty() {
+		println!("\t------ {}", data.app_locale.no_match.replace("{1}", ptrn));
+		println!("----------------");
+		return false;
+	}
+	else {
+		println!("----------------");
+		print!("{}", data.app_locale.index_to_del);
+		let _ = io::stdout().flush();
+
+		let index = get_index(trouve.len(), &data.app_locale);
+		if index > 0 {		// Suppression
+			if let Some(&index_a_supprimer) = trouve.get(index - 1) {
+				if let Some((_, del_desc)) = data.app_line_vec
+												.remove(index_a_supprimer)
+												.split_once("∫∆∫") {
+					println!("{}", data.app_locale.del_success.replace("{1}", del_desc));
+					return true;
+				}
+				else { return false; }
+			}
+			else { return false; }
+		}
+		else { return false; }
+	}
+}

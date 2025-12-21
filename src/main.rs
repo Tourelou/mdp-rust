@@ -162,7 +162,7 @@ pub fn main() -> ExitCode {
 	}
 	else { Vec::new() }; // Fichier inexistant = liste vide
 
-	let app_data = AppData {app_locale, app_pw_len, app_encryp_pass, app_line_vec};
+	let mut app_data = AppData {app_locale, app_pw_len, app_encryp_pass, app_line_vec};
 	// ############################################################################
 	// Exécution de la commande selon l'énumération
 	match &config.command {		// Deuxième tri, ces commandes font affaire avec un fichier => openssl
@@ -180,11 +180,20 @@ pub fn main() -> ExitCode {
 		}
 		CommandsOptions::Delete(pattern) => {
 			if mdp_file_exists {
-				println!("➡️ Action: Suppression du pattern '{}'.", pattern);
-				_ = encrypt_via_cli("/home/danv/Desktop/dummy.bin", &app_data.app_line_vec, &app_data.app_encryp_pass);
+				println!("{}", app_data.app_locale.del_header
+									.replace("{1}", pattern)
+									.replace("{2}", &mdp_full_path));
+				if actions::del(&pattern, &mut app_data) {
+					encrypt_via_cli(&file_output,
+								&app_data.app_line_vec,
+								&app_data.app_encryp_pass).unwrap_or_else(|e| {
+					eprintln!("{} {}", app_data.app_locale.err_err, e);
+					std::process::exit(20); // Arrêt immédiat si le déchiffrement échoue
+					})
+				}
 			}
 			else {
-				eprintln!("Le fichier '{}' n'existe pas. Pas de suppresion possible.", file_output);
+				eprintln!("{}", app_data.app_locale.del_no_file.replace("{1}", &mdp_full_path));
 				return ExitCode::FAILURE;
 			}
 		}
