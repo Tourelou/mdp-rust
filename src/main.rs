@@ -22,7 +22,7 @@ use openssl_cli::{decrypt_via_cli, encrypt_via_cli};
 // --- Logique d'Application ---
 
 const PRG_NAME: &'static str = "mdp";
-const VERSION: &'static str = "2025-12-20";
+const VERSION: &'static str = "2025-12-22";
 const DEFAULT_PW_LENGTH: usize = 12;
 const DEFAULT_FILENAME: &'static str = "mdp.bin";
 
@@ -163,6 +163,22 @@ pub fn main() -> ExitCode {
 	else { Vec::new() }; // Fichier inexistant = liste vide
 
 	let mut app_data = AppData {app_locale, app_pw_len, app_encryp_pass, app_line_vec};
+
+	let finalize_encryption = |data: &mut AppData| {
+		if !mdp_file_exists {
+			data.app_encryp_pass = match env::var("pass") {
+				Ok(v) => v,
+				// Utilise & pour emprunter la String au lieu de la déplacer
+				Err(_) => get_pw!(&data.app_locale.enter_encryp_pw),
+			};
+		}
+		encrypt_via_cli(&file_output,
+							&data.app_line_vec,
+							&data.app_encryp_pass).unwrap_or_else(|e| {
+			eprintln!("{} {}", data.app_locale.err_err, e);
+			std::process::exit(20);
+		});
+	};
 	// ############################################################################
 	// Exécution de la commande selon l'énumération
 	match &config.command {		// Deuxième tri, ces commandes font affaire avec un fichier => openssl
@@ -198,16 +214,25 @@ pub fn main() -> ExitCode {
 			}
 		}
 		CommandsOptions::Add(desc, pw) => {
-			println!("➡️ Action: Ajout de '{}'. Mot de passe capturé ({} caractères).", desc, pw.len());
-			println!("   Sauvegarde simulée dans le fichier : {}", file_output);
+			app_data.app_line_vec.push(format!("{pw}∫∆∫{desc}"));
+			println!("{}", app_data.app_locale.add_new_save.replace("{1}", pw).replace("{2}", &mdp_full_path));
+
+			finalize_encryption(&mut app_data);
 		}
 		CommandsOptions::New(desc) => {
 			let new_pw = generator::gen_pass(app_pw_len);
-			println!("➡️ Action: Ajout de '{}'. Mot de passe généré {}.", desc, new_pw);
-			println!("   Sauvegarde simulée dans le fichier : {}", file_output);
+			app_data.app_line_vec.push(format!("{new_pw}∫∆∫{desc}"));
+			println!("{}", app_data.app_locale.add_new_save.replace("{1}", desc).replace("{2}", &mdp_full_path));
+			if command_exist("pbcopy", &app_data.app_locale) {
+				send_to_clipboard(&new_pw);
+				println!("{} {new_pw} ==> Clipboard",app_data.app_locale.mdp_gen_str);
+			}
+			else { println!("{} {new_pw}", app_data.app_locale.mdp_gen_str); }
+
+			finalize_encryption(&mut app_data);
 		}
 		CommandsOptions::None => {
-			eprintln!("🛑 Erreur interne: Commande non définie.");
+			eprintln!("🛑 {}", app_data.app_locale.err_interne);
 			return ExitCode::FAILURE;
 		}
 		_ => { }
