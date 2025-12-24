@@ -13,3 +13,6 @@ debug = false       # Exclude debug symbols for smaller binary size
 lto = true          # Link-Time Optimization for further size reduction
 panic = "abort"     # Use `abort` to reduce binary size further
 strip = "symbols"      # See split-debuginfo - allows us to drop the size by ~65%
+
+[profile.dev-debug]
+inherits = "dev" # Il va copier tous les réglages du mode standard
